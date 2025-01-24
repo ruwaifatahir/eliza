@@ -5,7 +5,7 @@ import {
 } from "@elizaos/core";
 import { z, ZodError } from "zod";
 
-export const DEFAULT_MAX_TWEET_LENGTH = 280;
+export const DEFAULT_MAX_TWEET_LENGTH = 180;
 
 const twitterUsernameSchema = z
     .string()
