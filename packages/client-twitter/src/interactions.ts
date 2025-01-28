@@ -15,7 +15,7 @@ import {
     elizaLogger,
     getEmbeddingZeroVector,
     IImageDescriptionService,
-    ServiceType
+    ServiceType,
 } from "@elizaos/core";
 import { ClientBase } from "./base";
 import { buildConversationThread, sendTweet, wait } from "./utils.ts";
@@ -349,8 +349,8 @@ export class TwitterInteractionClient {
         elizaLogger.debug("formattedConversation: ", formattedConversation);
 
         const imageDescriptionsArray = [];
-        try{
-            elizaLogger.debug('Getting images');
+        try {
+            elizaLogger.debug("Getting images");
             for (const photo of tweet.photos) {
                 elizaLogger.debug(photo.url);
                 const description = await this.runtime
@@ -361,21 +361,24 @@ export class TwitterInteractionClient {
                 imageDescriptionsArray.push(description);
             }
         } catch (error) {
-    // Handle the error
-    elizaLogger.error("Error Occured during describing image: ", error);
-}
-
-
-
+            // Handle the error
+            elizaLogger.error("Error Occured during describing image: ", error);
+        }
 
         let state = await this.runtime.composeState(message, {
             twitterClient: this.client.twitterClient,
             twitterUserName: this.client.twitterConfig.TWITTER_USERNAME,
             currentPost,
             formattedConversation,
-            imageDescriptions: imageDescriptionsArray.length > 0
-            ? `\nImages in Tweet:\n${imageDescriptionsArray.map((desc, i) =>
-              `Image ${i + 1}: Title: ${desc.title}\nDescription: ${desc.description}`).join("\n\n")}`:""
+            imageDescriptions:
+                imageDescriptionsArray.length > 0
+                    ? `\nImages in Tweet:\n${imageDescriptionsArray
+                          .map(
+                              (desc, i) =>
+                                  `Image ${i + 1}: Title: ${desc.title}\nDescription: ${desc.description}`
+                          )
+                          .join("\n\n")}`
+                    : "",
         });
 
         // check if the tweet exists, save if it doesn't
@@ -466,9 +469,7 @@ export class TwitterInteractionClient {
                 );
             } else {
                 try {
-                    const callback: HandlerCallback = async (
-                        response: Content
-                    ) => {
+                    const callback: HandlerCallback = async (response: Content) => {
                         const memories = await sendTweet(
                             this.client,
                             response,
@@ -479,29 +480,46 @@ export class TwitterInteractionClient {
                         return memories;
                     };
 
-                    const responseMessages = await callback(response);
+                    // Check if we should suppress the initial message
+                    const action = this.runtime.actions.find(
+                        (a) => a.name === response.action
+                    );
+                    const shouldSuppressInitialMessage = action?.suppressInitialMessage;
 
-                    state = (await this.runtime.updateRecentMessageState(
-                        state
-                    )) as State;
+                    let responseMessages = null;
+                    if (!shouldSuppressInitialMessage) {
+                        responseMessages = await callback(response);
 
-                    for (const responseMessage of responseMessages) {
-                        if (
-                            responseMessage ===
-                            responseMessages[responseMessages.length - 1]
-                        ) {
-                            responseMessage.content.action = response.action;
-                        } else {
-                            responseMessage.content.action = "CONTINUE";
+                        state = (await this.runtime.updateRecentMessageState(state)) as State;
+
+                        for (const responseMessage of responseMessages || []) {
+                            if (responseMessage === responseMessages[responseMessages.length - 1]) {
+                                responseMessage.content.action = response.action;
+                            } else {
+                                responseMessage.content.action = "CONTINUE";
+                            }
+                            await this.runtime.messageManager.createMemory(responseMessage);
                         }
-                        await this.runtime.messageManager.createMemory(
-                            responseMessage
-                        );
+                    } else {
+                        // Create a memory for the suppressed message to track the action
+                        const suppressedMemory = {
+                            id: stringToUuid(Date.now().toString() + "-" + this.runtime.agentId),
+                            agentId: this.runtime.agentId,
+                            userId: this.runtime.agentId,
+                            content: {
+                                text: response.text,
+                                action: response.action,
+                                source: "twitter"
+                            },
+                            roomId: message.roomId,
+                            createdAt: Date.now()
+                        };
+                        responseMessages = [suppressedMemory];
                     }
 
                     await this.runtime.processActions(
                         message,
-                        responseMessages,
+                        responseMessages || [],
                         state,
                         callback
                     );

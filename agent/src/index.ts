@@ -885,7 +885,7 @@ export async function createAgent(
             getSecret(character, "QUAI_PRIVATE_KEY") ? quaiPlugin : null,
         ].filter(Boolean),
         providers: [],
-        actions: [],
+        actions: [getSafetyCheckAction],
         services: [],
         managers: [],
         cacheManager: cache,
