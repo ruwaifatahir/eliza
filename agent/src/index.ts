@@ -107,6 +107,7 @@ import { getNewsAction } from "./getNews";
 import { getSafetyCheckAction } from "./getSafetyCheckAction";
 import { postTwitterAction } from "./postTwitterAction";
 import { suiNewsProvider } from "./suiNewsProvider";
+import { postThreadAction } from "./thread/postThread";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
@@ -885,7 +886,7 @@ export async function createAgent(
             getSecret(character, "QUAI_PRIVATE_KEY") ? quaiPlugin : null,
         ].filter(Boolean),
         providers: [],
-        actions: [],
+        actions: [postThreadAction, getSafetyCheckAction],
         services: [],
         managers: [],
         cacheManager: cache,
