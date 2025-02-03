@@ -14,8 +14,11 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 # Set the working directory
 WORKDIR /app
 
+# Copy your existing lerna.json first
+COPY lerna.json ./
+
 # Copy package.json and other configuration files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json lerna.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json ./
 
 # Copy the rest of the application code
 COPY agent ./agent
@@ -53,6 +56,8 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/characters ./characters
 COPY --from=builder /app/client ./client
 
+# Copy lerna.json from builder stage
+COPY --from=builder /app/lerna.json ./
+
 # Set the command to run the application
-# CMD ["pnpm", "start", "--characters=characters/neonet.character.json"]
 CMD ["pnpm", "start:client"]
