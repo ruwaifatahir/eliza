@@ -109,8 +109,8 @@ import yargs from "yargs";
 
 // import { postThreadAction } from "./thread/postThread";
 // import { getSafetyCheckAction } from "./getSafetyCheckAction";
-import { composeTrendingCoinsThread, postThread } from "./thread/postThread";
-import { getSafetyCheckHandler } from "./getSafetyCheckAction";
+import { composeTrendingCoinsThread, postThread } from "./thread/postThread.ts";
+import { getSafetyCheckHandler } from "./getSafetyCheckAction.ts";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
