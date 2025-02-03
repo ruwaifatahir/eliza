@@ -23,17 +23,23 @@ import {
     Character,
     Client,
     Clients,
+    Content,
     DbCacheAdapter,
     defaultCharacter,
     elizaLogger,
     FsCacheAdapter,
+    generateObject,
+    generateText,
+    HandlerCallback,
     IAgentRuntime,
     ICacheManager,
     IDatabaseAdapter,
     IDatabaseCacheAdapter,
     Memory,
+    ModelClass,
     ModelProviderName,
     settings,
+    State,
     stringToUuid,
     validateCharacterConfig,
 } from "@elizaos/core";
@@ -107,13 +113,271 @@ import { fileURLToPath } from "url";
 import yargs from "yargs";
 // import {dominosPlugin} from "@elizaos/plugin-dominos";
 
-// import { postThreadAction } from "./thread/postThread";
-// import { getSafetyCheckAction } from "./getSafetyCheckAction";
-import { composeTrendingCoinsThread, postThread } from "./thread/postThread.ts";
-import { getSafetyCheckHandler } from "./getSafetyCheckAction.ts";
+
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
+
+import { z } from "zod";
+import { Scraper } from "agent-twitter-client";
+
+//*******************************POST THREAD ACTION *******************************//
+export interface CoinMetadata {
+    symbol: string;
+    name: string;
+    description: string;
+}
+
+export interface CoinData {
+    isMintable: string;
+    lpBurnt: string;
+    coinSupply: string;
+    coinMetadata: CoinMetadata;
+    tokensInLiquidity: string;
+    top10HolderPercentage: string;
+    top20HolderPercentage: string;
+    totalLiquidityUsd: number;
+    timeCreated: string;
+    volume6h: string;
+    volume24h: string;
+    isCoinHoneyPot: boolean;
+}
+
+export interface ThreadContent {
+    tweets: string[];
+}
+
+export const ThreadSchema = z.object({
+    tweets: z
+        .array(z.string())
+        .describe("Array of tweets that make up the thread"),
+});
+
+export const isThreadContent = (obj: any): obj is ThreadContent => {
+    return ThreadSchema.safeParse(obj).success;
+};
+
+export async function getTrendingCoins(): Promise<CoinData[]> {
+    const API_KEY = "insidex_api.6WLT6sDeDbszNP77HfCW3ici";
+    const BASE_URL = "https://api-ex.insidex.trade/coins";
+
+    try {
+        const response = await fetch(`${BASE_URL}/trending`, {
+            headers: {
+                "x-api-key": API_KEY,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Remove iconUrl from each coin's metadata
+        return data.map((coin: any) => {
+            if (coin.coinMetadata && coin.coinMetadata.iconUrl) {
+                const { iconUrl, ...restMetadata } = coin.coinMetadata;
+                return { ...coin, coinMetadata: restMetadata };
+            }
+            return coin;
+        });
+    } catch (error) {
+        elizaLogger.error("Error fetching trending coins:", error);
+        return [];
+    }
+}
+
+function filterTrendingCoins(coins: CoinData[]): CoinData[] {
+    const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
+
+    const filteredCoins = coins
+        .filter((coin) => {
+            const timeCreated = parseInt(coin.timeCreated);
+            const volume6h = parseFloat(coin.volume6h);
+            return (
+                !isNaN(timeCreated) &&
+                timeCreated >= fourHoursAgo &&
+                volume6h >= 10000
+            );
+        })
+        .sort((a, b) => parseFloat(b.volume6h) - parseFloat(a.volume6h));
+
+    // Take up to 3 coins if available, or all coins if less than 3
+    const maxCoins = Math.min(filteredCoins.length, 3);
+    return filteredCoins.slice(0, maxCoins);
+}
+
+export async function generateCoinAnalysisThread(
+    runtime: IAgentRuntime,
+    coins: CoinData[]
+): Promise<string[]> {
+    const context = `You are a crypto analyst creating an engaging and professional Twitter thread about newly created trending tokens. Write in a concise, informative style that resonates with crypto traders.
+
+Token Data:
+${coins
+    .map(
+        (coin, i) => `
+${i + 1}. ${coin.coinMetadata.name} $${coin.coinMetadata.symbol}
+- LP Burnt: ${coin.lpBurnt}
+- Top 20 Holders: ${coin.top20HolderPercentage}%
+- Honeypot: ${coin.isCoinHoneyPot}
+- Liquidity: $${Math.round(coin.totalLiquidityUsd).toLocaleString()}
+- 24h Volume: $${Math.round(parseFloat(coin.volume24h)).toLocaleString()}`
+    )
+    .join("\n")}
+
+Create a Twitter thread that:
+1. First tweet: Starts with a professional and engaging overview of the tokens analyzed.
+   - Examples:
+     - "Analyzing X newly created trending tokens in the last 4 hours: $SYMBOL, $SYMBOL, and $SYMBOL. Let’s examine their security metrics and assess potential risks."
+     - "Breaking down X trending tokens created in the past 4 hours: $SYMBOL, $SYMBOL, and $SYMBOL. Here’s what the data reveals."
+     - "Examining X newly created trending tokens: $SYMBOL, $SYMBOL, and $SYMBOL. Let’s assess their risks and metrics."
+
+2. For each coin analysis:
+   - Use varied transitions to maintain natural flow:
+     - For the first coin:
+       - "Let’s start with $SYMBOL—..."
+       - "Beginning with $SYMBOL—..."
+     - For middle coins:
+       - "Next, let’s look at $SYMBOL—..."
+       - "Now turning to $SYMBOL—..."
+       - "Moving on to $SYMBOL—..."
+     - For the last coin:
+       - "Finally, $SYMBOL—..."
+       - "Wrapping up with $SYMBOL—..."
+
+   - Include key security metrics:
+     - LP Status:
+       - "The LP is burnt, reducing liquidity risks."
+       - "The LP is not burnt, leaving liquidity vulnerable to removal."
+     - Holder distribution:
+       - "Top 20 holders control XX%, reflecting healthy distribution."
+       - "Top 20 holders control XX%, indicating moderate centralization."
+       - "Top 20 holders control XX%, signaling high centralization."
+     - Honeypot status:
+       - "No honeypot detected."
+       - "Honeypot detected, posing significant risk."
+
+   - End with a clear Risk Level and rationale:
+     - "Risk Level: Low—metrics indicate a secure setup."
+     - "Risk Level: Medium—centralization risk is notable."
+     - "Risk Level: High—driven by liquidity and concentration risks."
+
+   - Example analysis format:
+     - "Let’s start with $SYMBOL—The LP is not burnt, leaving liquidity vulnerable to removal. Top 20 holders control XX%, reflecting moderate centralization. No honeypot detected. Risk Level: High, driven by liquidity vulnerability."
+
+3. Final tweet:
+   - Close with a professional disclaimer:
+     - "Conduct thorough research before making investment decisions. This analysis is based on observed data and is not financial advice. DYOR. NFA."
+     - "This thread is not financial advice. Always verify the data and make informed decisions. DYOR. NFA."
+
+### Rules:
+- Keep each tweet under 280 characters.
+- Use professional, analytical language**—no emojis or decorative characters.
+- **Never use parentheses around token symbols.
+- Ensure each analysis is unique and engaging.
+- Always classify unburnt LP as High Risk.
+- Use varied transitions and phrasing to avoid repetition.
+- "DYOR" only in the final tweet, along with "NFA."
+- Avoid casual or overly conversational language. Stay concise and professional.
+- The thread should flow naturally and read as a cohesive analysis.
+
+Generate an array of tweets, where each element is a complete tweet, following this structured flow.`;
+
+    const threadContentObject = await generateObject({
+        runtime,
+        context,
+        modelClass: ModelClass.LARGE,
+        schema: ThreadSchema,
+    });
+
+    if (!isThreadContent(threadContentObject.object)) {
+        elizaLogger.error(
+            "Invalid thread content:",
+            threadContentObject.object
+        );
+        return [];
+    }
+
+    return threadContentObject.object.tweets;
+}
+
+export async function composeTrendingCoinsThread(
+    runtime: IAgentRuntime
+): Promise<string[]> {
+    const coins = await getTrendingCoins();
+    const trendingCoins = filterTrendingCoins(coins);
+
+    if (!trendingCoins.length) {
+        return [];
+    }
+
+    return await generateCoinAnalysisThread(runtime, trendingCoins);
+}
+
+export async function postThread(
+    runtime: IAgentRuntime,
+    tweets: string[]
+): Promise<boolean> {
+    try {
+        const twitterClient = runtime.clients.twitter?.client?.twitterClient;
+        const scraper = twitterClient || new Scraper();
+
+        if (!twitterClient) {
+            const username = runtime.getSetting("TWITTER_USERNAME");
+            const password = runtime.getSetting("TWITTER_PASSWORD");
+            const email = runtime.getSetting("TWITTER_EMAIL");
+            const twitter2faSecret = runtime.getSetting("TWITTER_2FA_SECRET");
+
+            if (!username || !password) {
+                elizaLogger.error("Twitter credentials not configured");
+                return false;
+            }
+
+            await scraper.login(username, password, email, twitter2faSecret);
+            if (!(await scraper.isLoggedIn())) {
+                elizaLogger.error("Failed to login to Twitter");
+                return false;
+            }
+        }
+
+        let previousTweetId: string | undefined;
+
+        // Post each tweet in the thread
+        for (const tweet of tweets) {
+            elizaLogger.log(`Posting tweet in thread: ${tweet}`);
+
+            const result = await scraper.sendTweet(tweet, previousTweetId);
+            const body = await result.json();
+
+            if (body.errors) {
+                const error = body.errors[0];
+                elizaLogger.error(
+                    `Twitter API error (${error.code}): ${error.message}`
+                );
+                return false;
+            }
+
+            // Extract the tweet ID from the response for the next reply
+            previousTweetId =
+                body?.data?.create_tweet?.tweet_results?.result?.rest_id;
+
+            if (!previousTweetId) {
+                elizaLogger.error("Failed to get tweet ID from response");
+                return false;
+            }
+
+            // Add a small delay between tweets to avoid rate limits
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
+        return true;
+    } catch (error) {
+        elizaLogger.error("Error posting thread:", error);
+        return false;
+    }
+}
 
 export const postThreadAction: Action = {
     name: "POST_TRENDING_COINS_THREAD",
@@ -197,6 +461,136 @@ export const postThreadAction: Action = {
     ],
 };
 
+//*******************************GET SAFETY CHECK ACTION *******************************//
+const API_KEY = "insidex_api.6WLT6sDeDbszNP77HfCW3ici";
+const BASE_URL = "https://api-ex.insidex.trade/coins";
+
+const getCoinMarketData = async (coinAddress: string) => {
+    try {
+        const response = await fetch(`${BASE_URL}/${coinAddress}/market-data`, {
+            headers: {
+                "x-api-key": API_KEY,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const [data] = await response.json();
+        return data;
+    } catch (error) {
+        console.error("Error fetching coin market data:", error);
+        throw error;
+    }
+};
+
+export const getSafetyCheckHandler = async (
+    _runtime: IAgentRuntime,
+    _message: Memory,
+    _state: State,
+    _options: { [key: string]: unknown },
+    _callback: HandlerCallback
+) => {
+    // Extract complete SUI address using LLM
+    const addressContext = `You are a SUI address extractor. Find and return ONLY the complete SUI address (format: 0x...::module::TICKER) from this message. If no valid SUI address is found, return "NONE". Message: ${_message.content.text}`;
+
+    let coinAddress = await generateText({
+        runtime: _runtime,
+        context: addressContext,
+        modelClass: ModelClass.SMALL,
+        stop: ["\n"],
+    });
+
+    if (coinAddress === "NONE") {
+        // const responseText =
+        //     "Could you send me the CA so I unlock the truth behind this interesting project?";
+        // _callback({ text: responseText } as Content);
+        return false;
+    }
+
+    try {
+        const marketData = await getCoinMarketData(coinAddress);
+
+        const analysisContext = `You are a crypto analyst with a unique personality. Create a concise, engaging analysis of this token data. Keep it short but informative and formatted for quick reading.
+
+IMPORTANT FORMATTING:
+Start with a natural opener about $TICKER (vary between: "Hmm", "Interesting ticker", "Ahh", "Well, looking at", etc.).
+Keep the analysis SHORT and FOCUSED – 2-3 key points max.
+Only include these key metrics: LP Burnt, Top 20 Holders %, and Honeypot Risk.
+Use concise, crypto-native language that resonates with degens.
+Keep the first part under 200 characters.
+Classify risk level based on LP Burnt, Top 20 Holders %, and Honeypot Risk.
+End with a simple but effective DYOR message on the same line.
+
+Risk Classification:
+Low Risk: LP is burnt (no quick rug). Top 20 holders control ≤20% (well distributed). No honeypot detected.
+
+Medium Risk: LP is burnt, but Top 20 holders control 21-50% (some centralization). No honeypot detected, but concentration raises concerns.
+
+High Risk: LP not burnt (devs can rug). Top 20 holders control >50% (whale dominance). Honeypot detected (can't sell). Major red flags.
+If two or more factors fall into a higher-risk category, classify the token at that risk level.
+
+Example Openers You Can Use:
+"Hmm, $TICKER—interesting setup..."
+"Ahh, $TICKER—what do we have here?"
+"Well, looking at $TICKER..."
+
+Example of Ideal Length & Style:
+Low Risk Example:
+Looking at $NEONET—LP is burnt, so no quick rug. Top 20 holders control 22.27%, showing a balanced spread. No honeypot risk detected—solid setup. Free your mind and always DYOR.
+
+Medium Risk Example:
+Ahh, $VOID—LP is burnt, so no instant rug, but top 20 wallets control 42%. No honeypot risk, but centralization is real. Proceed with caution and always DYOR.
+
+ High Risk Example:
+Hmm, $RISKY—LP not burnt, so rug still possible. Top 20 holders hoarding 75%, and it’s a confirmed honeypot. High risk! Exit the simulation. Always DYOR.
+
+Alternative Phrases You Can Use:
+For wallet distribution: "wallet spread looks healthy", "holder distribution shows promise"
+For security status: "security scan came back clean", "initial scan reveals no traps"
+For recommendations: "worth watching", "showing potential"
+
+Token Data:
+Name: ${marketData.coinMetadata?.name}
+Symbol: ${marketData.coinMetadata?.symbol}
+LP Burnt: ${marketData.lpBurnt}
+Top 20 Holders: ${marketData.top20HolderPercentage}%
+Honeypot Risk: ${marketData.isCoinHoneyPot}`;
+
+        let analysis = await generateText({
+            runtime: _runtime,
+            context: analysisContext,
+            modelClass: ModelClass.LARGE,
+            stop: ["\n\n\n"],
+        });
+
+        const newMemory: Memory = {
+            userId: _message.agentId,
+            agentId: _message.agentId,
+            roomId: _message.roomId,
+            content: {
+                text: analysis,
+                action: "GET_SAFETY_CHECK_RESPONSE",
+                source: _message.content?.source,
+            } as Content,
+        };
+        await _runtime.getMemoryManager("");
+        await _runtime.messageManager.createMemory(newMemory);
+        _callback({
+            text: analysis,
+            action: "GET_SAFETY_CHECK_RESPONSE",
+            source: _message.content?.source,
+        } as Content);
+        return true;
+    } catch (error) {
+        console.error("Error in safety check:", error);
+        // const errorMessage =
+        //     "Sorry, I couldn't fetch the market data at this time. Please make sure the SUI address is correct and try again.";
+        // _callback({ text: errorMessage } as Content);
+        return false;
+    }
+};
 export const getSafetyCheckAction: Action = {
     name: "GET_SAFETY_CHECK",
     description: "Get safety check information for tokens on the SUI network",
