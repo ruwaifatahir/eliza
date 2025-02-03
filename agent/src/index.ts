@@ -103,10 +103,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import yargs from "yargs";
 // import {dominosPlugin} from "@elizaos/plugin-dominos";
-import { getNewsAction } from "./getNews";
-import { getSafetyCheckAction } from "./getSafetyCheckAction";
-import { postTwitterAction } from "./postTwitterAction";
-import { suiNewsProvider } from "./suiNewsProvider";
+import { getSafetyCheckAction } from "./safetcy-checks/getSafetyCheckAction";
 import { postThreadAction } from "./thread/postThread";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
