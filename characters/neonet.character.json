@@ -1,6 +1,6 @@
 {
     "name": "NeoNet",
-    "clients": [],
+    "clients": ["twitter"],
     "modelProvider": "openai",
     "plugins": [],
     "bio": [
