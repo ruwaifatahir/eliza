@@ -4,7 +4,7 @@ FROM node:23.3.0-slim AS builder
 # Install pnpm globally and install necessary build tools
 RUN npm install -g pnpm@9.4.0 && \
     apt-get update && \
-    apt-get install -y git python3 make g++ && \ 
+    apt-get install -y git python3 make g++ && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -56,3 +56,4 @@ COPY --from=builder /app/client ./client
 # Set the command to run the application
 # CMD ["pnpm", "start", "--characters=characters/neonet.character.json"]
 CMD ["pnpm", "start:client"]
+ 
