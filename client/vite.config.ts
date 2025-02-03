@@ -25,4 +25,13 @@ export default defineConfig({
             "@": "/src",
         },
     },
+    server: {
+        proxy: {
+            "/api": {
+                target: "http://srv-captain--agent:3000",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api/, ""),
+            },
+        },
+    },
 });
