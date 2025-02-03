@@ -15,7 +15,7 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 WORKDIR /app
 
 # Copy package.json and other configuration files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc turbo.json lerna.json ./
 
 # Copy the rest of the application code
 COPY agent ./agent
@@ -56,4 +56,3 @@ COPY --from=builder /app/client ./client
 # Set the command to run the application
 # CMD ["pnpm", "start", "--characters=characters/neonet.character.json"]
 CMD ["pnpm", "start:client"]
- 
