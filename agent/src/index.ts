@@ -15,6 +15,8 @@ import { TwitterClientInterface } from "@elizaos/client-twitter";
 import { PrimusAdapter } from "@elizaos/plugin-primus";
 
 import {
+    Action,
+    ActionExample,
     AgentRuntime,
     CacheManager,
     CacheStore,
@@ -29,6 +31,7 @@ import {
     ICacheManager,
     IDatabaseAdapter,
     IDatabaseCacheAdapter,
+    Memory,
     ModelProviderName,
     settings,
     stringToUuid,
@@ -104,11 +107,174 @@ import { fileURLToPath } from "url";
 import yargs from "yargs";
 // import {dominosPlugin} from "@elizaos/plugin-dominos";
 
-import { postThreadAction } from "./thread/postThread";
-import { getSafetyCheckAction } from "./getSafetyCheckAction";
+// import { postThreadAction } from "./thread/postThread";
+// import { getSafetyCheckAction } from "./getSafetyCheckAction";
+import { composeTrendingCoinsThread, postThread } from "./thread/postThread";
+import { getSafetyCheckHandler } from "./getSafetyCheckAction";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
+
+export const postThreadAction: Action = {
+    name: "POST_TRENDING_COINS_THREAD",
+    description:
+        "Posts a Twitter thread about trending coins (created <4h, volume >$15k). Direct client only.",
+    similes: [
+        "ANALYZE_TRENDING_COINS",
+        "POST_COIN_ANALYSIS",
+        "CREATE_TRENDING_ANALYSIS",
+        "POST_NEW_COINS_ANALYSIS",
+    ],
+    suppressInitialMessage: true,
+    validate: async (runtime: IAgentRuntime) => {
+        // Check for direct client usage
+        // if (message.content.source !== "direct") {
+        //     elizaLogger.error(
+        //         "POST_TRENDING_COINS_THREAD action can only be used from direct client"
+        //     );
+        //     return false;
+        // }
+
+        // Existing credential validation
+        const username = runtime.getSetting("TWITTER_USERNAME");
+        const password = runtime.getSetting("TWITTER_PASSWORD");
+        const email = runtime.getSetting("TWITTER_EMAIL");
+        const hasCredentials = !!username && !!password && !!email;
+        elizaLogger.log(`Has credentials: ${hasCredentials}`);
+
+        return hasCredentials;
+    },
+    handler: async (
+        runtime: IAgentRuntime,
+        message: Memory
+    ): Promise<boolean> => {
+        // Double-check for direct client usage
+        if (message.content.source !== "direct") {
+            elizaLogger.error(
+                "POST_TRENDING_COINS_THREAD action can only be used from direct client"
+            );
+            return false;
+        }
+
+        try {
+            const tweets = await composeTrendingCoinsThread(runtime);
+
+            if (!tweets.length) {
+                elizaLogger.error("No content generated for thread");
+                return false;
+            }
+
+            elizaLogger.log(`Generated thread content:`, tweets);
+
+            if (
+                process.env.TWITTER_DRY_RUN &&
+                process.env.TWITTER_DRY_RUN.toLowerCase() === "true"
+            ) {
+                elizaLogger.info(`Dry run: would have posted thread:`, tweets);
+                return true;
+            }
+
+            return await postThread(runtime, tweets);
+        } catch (error) {
+            elizaLogger.error("Error in post thread action:", error);
+            return false;
+        }
+    },
+    examples: [
+        [
+            {
+                user: "{{user1}}",
+                content: { text: "Create a thread about this" },
+            },
+            {
+                user: "{{agentName}}",
+                content: {
+                    text: "I'll create a thread to explain this in detail.",
+                    action: "POST_TRENDING_COINS_THREAD",
+                },
+            },
+        ],
+    ],
+};
+
+export const getSafetyCheckAction: Action = {
+    name: "GET_SAFETY_CHECK",
+    description: "Get safety check information for tokens on the SUI network",
+    similes: [
+        "TOKEN_SAFETY",
+        "SAFETY_CHECK",
+        "CHECK_TOKEN",
+        "TOKEN_SECURITY",
+        "VERIFY_TOKEN",
+        "TOKEN_CHECK",
+        "SECURITY_CHECK",
+        "COIN_SAFETY",
+        "CHECK_ANALYSIS",
+        "ANALYSIS_CHECK",
+        "ANALYSIS_SECURITY",
+        "ANALYSIS_SAFETY",
+        "ANALYSIS_CHECK_SECURITY",
+        "ANALYSIS_CHECK_SAFETY",
+        "ANALYSIS_CHECK_TOKEN",
+        "ANALYSIS_CHECK_TOKEN_SECURITY",
+        "COIN_ANALYSIS",
+        "ANALYSIS_COIN",
+        "ANALYSIS_COIN_SECURITY",
+        "ANALYSIS_COIN_SAFETY",
+        "ANALYSIS_COIN_CHECK_SECURITY",
+        "ANALYSIS_COIN_CHECK_SAFETY",
+        "ANALYSIS_COIN_CHECK_TOKEN",
+    ],
+    suppressInitialMessage: true,
+    validate: async () => true,
+    handler: getSafetyCheckHandler,
+    examples: [
+        [
+            {
+                user: "{{user1}}",
+                content: {
+                    text: "What's your analysis on this coin? 0x5ef78ed76602f11d4bd1689b1b8787f839eb2e31f97a2d8efc35d869770f2c23::mega::MEGA",
+                },
+            },
+            {
+                user: "{{agentName}}",
+                content: {
+                    text: "[Analysis of security status and metrics]",
+                    action: "GET_SAFETY_CHECK_RESPONSE",
+                },
+            },
+        ],
+        [
+            {
+                user: "{{user1}}",
+                content: {
+                    text: "Can you verify if 0x2cd6f14a4b64c3a0fa9c644e8ed88d9c91d789a071886d67d24e6b435147063d::pugwif::PUGWIF is legitimate?",
+                },
+            },
+            {
+                user: "{{agentName}}",
+                content: {
+                    text: "[Analysis of security status and metrics].",
+                    action: "GET_SAFETY_CHECK_RESPONSE",
+                },
+            },
+
+            {
+                user: "{{user1}}",
+                content: {
+                    text: "What about this coin? 0x5ef78ed76602f11d4bd1689b1b8787f839eb2e31f97a2d8efc35d869770f2c23::mega::MEGA",
+                },
+            },
+            {
+                user: "{{agentName}}",
+                content: {
+                    text: "[Analysis of security status and metrics].",
+                    action: "GET_SAFETY_CHECK_RESPONSE",
+                },
+            },
+        ],
+    ] as ActionExample[][],
+};
 
 export const wait = (minTime: number = 1000, maxTime: number = 3000) => {
     const waitTime =
