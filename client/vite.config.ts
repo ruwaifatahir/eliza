@@ -28,7 +28,7 @@ export default defineConfig({
     server: {
         proxy: {
             "/api": {
-                target: "http://srv-captain--agent:3000",
+                target: "http://agent.eliza.neonetai.ai/",
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api/, ""),
             },
