@@ -414,8 +414,11 @@ export async function generateText({
             case ModelProviderName.TOGETHER:
             case ModelProviderName.NINETEEN_AI:
             case ModelProviderName.AKASH_CHAT_API: {
-                elizaLogger.debug("Initializing OpenAI model with Cloudflare check");
-                const baseURL = getCloudflareGatewayBaseURL(runtime, 'openai') || endpoint;
+                elizaLogger.debug(
+                    "Initializing OpenAI model with Cloudflare check"
+                );
+                const baseURL =
+                    getCloudflareGatewayBaseURL(runtime, "openai") || endpoint;
 
                 //elizaLogger.debug("OpenAI baseURL result:", { baseURL });
                 const openai = createOpenAI({
@@ -488,7 +491,10 @@ export async function generateText({
                 const { text: openaiResponse } = await aiGenerateText({
                     model: openai.languageModel(model),
                     prompt: context,
-                    system: runtime.character.system ?? settings.SYSTEM_PROMPT ?? undefined,
+                    system:
+                        runtime.character.system ??
+                        settings.SYSTEM_PROMPT ??
+                        undefined,
                     temperature: temperature,
                     maxTokens: max_response_length,
                     frequencyPenalty: frequency_penalty,
@@ -550,11 +556,19 @@ export async function generateText({
             }
 
             case ModelProviderName.ANTHROPIC: {
-                elizaLogger.debug("Initializing Anthropic model with Cloudflare check");
-                const baseURL = getCloudflareGatewayBaseURL(runtime, 'anthropic') || "https://api.anthropic.com/v1";
+                elizaLogger.debug(
+                    "Initializing Anthropic model with Cloudflare check"
+                );
+                const baseURL =
+                    getCloudflareGatewayBaseURL(runtime, "anthropic") ||
+                    "https://api.anthropic.com/v1";
                 elizaLogger.debug("Anthropic baseURL result:", { baseURL });
 
-                const anthropic = createAnthropic({ apiKey, baseURL, fetch: runtime.fetch });
+                const anthropic = createAnthropic({
+                    apiKey,
+                    baseURL,
+                    fetch: runtime.fetch,
+                });
                 const { text: anthropicResponse } = await aiGenerateText({
                     model: anthropic.languageModel(model),
                     prompt: context,
@@ -642,10 +656,16 @@ export async function generateText({
             }
 
             case ModelProviderName.GROQ: {
-                elizaLogger.debug("Initializing Groq model with Cloudflare check");
-                const baseURL = getCloudflareGatewayBaseURL(runtime, 'groq');
+                elizaLogger.debug(
+                    "Initializing Groq model with Cloudflare check"
+                );
+                const baseURL = getCloudflareGatewayBaseURL(runtime, "groq");
                 elizaLogger.debug("Groq baseURL result:", { baseURL });
-                const groq = createGroq({ apiKey, fetch: runtime.fetch, baseURL });
+                const groq = createGroq({
+                    apiKey,
+                    fetch: runtime.fetch,
+                    baseURL,
+                });
 
                 const { text: groqResponse } = await aiGenerateText({
                     model: groq.languageModel(model),
@@ -870,6 +890,36 @@ export async function generateText({
                 break;
             }
 
+            case ModelProviderName.ATOMA: {
+                elizaLogger.debug("Initializing Atoma model.");
+                const atoma = createOpenAI({
+                    apiKey,
+                    baseURL: endpoint,
+                    fetch: runtime.fetch,
+                });
+
+                const { text: atomaResponse } = await aiGenerateText({
+                    model: atoma.languageModel(model),
+                    prompt: context,
+                    system:
+                        runtime.character.system ??
+                        settings.SYSTEM_PROMPT ??
+                        undefined,
+                    tools: tools,
+                    onStepFinish: onStepFinish,
+                    maxSteps: maxSteps,
+                    temperature: temperature,
+                    maxTokens: max_response_length,
+                    frequencyPenalty: frequency_penalty,
+                    presencePenalty: presence_penalty,
+                    experimental_telemetry: experimental_telemetry,
+                });
+
+                response = atomaResponse;
+                elizaLogger.debug("Received response from Atoma model.");
+                break;
+            }
+            
             case ModelProviderName.GALADRIEL: {
                 elizaLogger.debug("Initializing Galadriel model.");
                 const headers = {};
