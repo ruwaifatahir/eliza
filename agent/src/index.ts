@@ -282,6 +282,9 @@ Create a Twitter thread that:
 - "DYOR" only in the final tweet, along with "NFA."
 - Avoid casual or overly conversational language. Stay concise and professional.
 - The thread should flow naturally and read as a cohesive analysis.
+- **Always prefix token symbols with $ (e.g., $AIZEN, $BTC)**
+
+
 
 Generate an array of tweets, where each element is a complete tweet, following this structured flow.`;
 
